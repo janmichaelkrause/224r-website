@@ -1,10 +1,11 @@
 import { auth } from '@/app/(auth)/auth';
-import { ArtifactKind } from '@/components/artifact';
+import type { ArtifactKind } from '@/components/artifact';
 import {
   deleteDocumentsByIdAfterTimestamp,
   getDocumentsById,
   saveDocument,
 } from '@/lib/db/queries';
+import { getCache, setCache, deleteCache } from '@/lib/upstash';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -19,8 +20,19 @@ export async function GET(request: Request) {
   if (!session || !session.user) {
     return new Response('Unauthorized', { status: 401 });
   }
-
-  const documents = await getDocumentsById({ id });
+  
+  // Try to get document from cache first
+  const cacheKey = `document:${id}`;
+  const cachedDocuments = await getCache<any[]>(cacheKey);
+  
+  let documents: any[] = [];
+  
+  if (cachedDocuments) {
+    documents = cachedDocuments;
+  } else {
+    // If not in cache, get from database
+    documents = await getDocumentsById({ id });
+  }
 
   const [document] = documents;
 
@@ -30,6 +42,11 @@ export async function GET(request: Request) {
 
   if (document.userId !== session.user.id) {
     return new Response('Unauthorized', { status: 401 });
+  }
+  
+  // Cache document for 5 minutes if not already cached
+  if (!cachedDocuments) {
+    await setCache(cacheKey, documents, 300);
   }
 
   return Response.json(documents, { status: 200 });
@@ -64,6 +81,10 @@ export async function POST(request: Request) {
       kind,
       userId: session.user.id,
     });
+    
+    // Invalidate cache when document is updated
+    const cacheKey = `document:${id}`;
+    await deleteCache(cacheKey);
 
     return Response.json(document, { status: 200 });
   }
@@ -99,6 +120,10 @@ export async function PATCH(request: Request) {
     id,
     timestamp: new Date(timestamp),
   });
+  
+  // Invalidate cache when documents are deleted
+  const cacheKey = `document:${id}`;
+  await deleteCache(cacheKey);
 
   return new Response('Deleted', { status: 200 });
 }

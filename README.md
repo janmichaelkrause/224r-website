@@ -30,6 +30,7 @@
 - Data Persistence
   - [Vercel Postgres powered by Neon](https://vercel.com/storage/postgres) for saving chat history and user data
   - [Vercel Blob](https://vercel.com/storage/blob) for efficient file storage
+  - [Upstash Redis](https://upstash.com/) for fast caching and rate limiting
 - [NextAuth.js](https://github.com/nextauthjs/next-auth)
   - Simple and secure authentication
 

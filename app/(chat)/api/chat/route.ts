@@ -1,5 +1,5 @@
 import {
-  UIMessage,
+  type UIMessage,
   appendResponseMessages,
   createDataStreamResponse,
   smoothStream,
@@ -25,6 +25,7 @@ import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { getWeather } from '@/lib/ai/tools/get-weather';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
+import { getCache, setCache } from '@/lib/upstash';
 
 export const maxDuration = 60;
 
@@ -45,6 +46,23 @@ export async function POST(request: Request) {
     if (!session || !session.user || !session.user.id) {
       return new Response('Unauthorized', { status: 401 });
     }
+    
+    // Implement rate limiting with Upstash Redis
+    const userId = session.user.id;
+    const rateLimitKey = `ratelimit:chat:${userId}`;
+    const requestCount = await getCache<number>(rateLimitKey) || 0;
+    
+    // Limit users to 50 requests per hour
+    const MAX_REQUESTS_PER_HOUR = 50;
+    if (requestCount >= MAX_REQUESTS_PER_HOUR) {
+      return new Response('Rate limit exceeded. Please try again later.', { 
+        status: 429,
+        headers: { 'Retry-After': '3600' }
+      });
+    }
+    
+    // Increment request count and set expiration (1 hour)
+    await setCache(rateLimitKey, requestCount + 1, 3600);
 
     const userMessage = getMostRecentUserMessage(messages);
 
